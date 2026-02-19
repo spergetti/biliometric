@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bibliometric Dashboard · WoS 900</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0c0e14;
+    --surface: #13161f;
+    --surface2: #1a1e2a;
+    --border: #252a38;
+    --accent: #e8c97a;
+    --accent2: #7aa8e8;
+    --accent3: #7ae8b8;
+    --accent4: #e87a9a;
+    --text: #e8e6df;
+    --muted: #7a8099;
+    --font-display: 'Playfair Display', serif;
+    --font-body: 'DM Sans', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0.4;
+  }
+
+  header {
+    padding: 48px 48px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    animation: fadeDown 0.6s ease both;
+  }
+
+  .header-left h1 {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 4vw, 3.5rem);
+    font-weight: 900;
+    line-height: 1;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .header-left h1 span {
+    color: var(--accent);
+  }
+
+  .header-left p {
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.05em;
+  }
+
+  .header-right {
+    display: flex;
+    gap: 24px;
+    flex-shrink: 0;
+  }
+
+  .stat-pill {
+    text-align: center;
+    padding: 12px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .stat-pill .val {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .stat-pill .lbl {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .grid {
+    display: grid;
+    gap: 20px;
+    padding: 32px 48px;
+    grid-template-columns: repeat(12, 1fr);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    animation: fadeUp 0.6s ease both;
+  }
+
+  .card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .card:hover::after { opacity: 1; }
+
+  .card-title {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  /* column spans */
+  .c8 { grid-column: span 8; }
+  .c4 { grid-column: span 4; }
+  .c6 { grid-column: span 6; }
+  .c5 { grid-column: span 5; }
+  .c7 { grid-column: span 7; }
+  .c12 { grid-column: span 12; }
+  .c3 { grid-column: span 3; }
+
+  canvas { max-width: 100%; }
+
+  /* Bar chart for journals */
+  .hbar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .hbar-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.78rem;
+  }
+
+  .hbar-label {
+    width: 180px;
+    flex-shrink: 0;
+    color: var(--text);
+    font-size: 0.73rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-body);
+  }
+
+  .hbar-track {
+    flex: 1;
+    height: 20px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .hbar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .hbar-val {
+    width: 28px;
+    text-align: right;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+
+  /* Keyword cloud */
+  .kw-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-content: flex-start;
+  }
+
+  .kw-tag {
+    padding: 5px 12px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    border: 1px solid;
+    cursor: default;
+    transition: transform 0.2s, opacity 0.2s;
+  }
+
+  .kw-tag:hover { transform: translateY(-2px); }
+
+  /* Country list */
+  .country-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .country-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.8rem;
+  }
+
+  .country-rank {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    width: 20px;
+  }
+
+  .country-name {
+    flex: 1;
+    color: var(--text);
+  }
+
+  .country-bar-wrap {
+    width: 100px;
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .country-bar {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--accent3);
+    transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .country-count {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--accent3);
+    width: 28px;
+    text-align: right;
+  }
+
+  /* Top cited list */
+  .cited-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .cited-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cited-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+  .cited-num {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+    min-width: 50px;
+    flex-shrink: 0;
+  }
+
+  .cited-title {
+    font-size: 0.78rem;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .cited-label {
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    margin-top: 2px;
+  }
+
+  /* Research areas donut caption */
+  .ra-labels {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 16px;
+  }
+
+  .ra-label-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.74rem;
+  }
+
+  .ra-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .ra-name { color: var(--text); flex: 1; }
+  .ra-count { color: var(--muted); font-family: var(--font-mono); font-size: 0.7rem; }
+
+  /* doctype badge */
+  .doctype-badges {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .doctype-badge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+
+  .doctype-badge .dtype { font-size: 0.8rem; color: var(--text); text-transform: capitalize; }
+  .doctype-badge .dcount { font-family: var(--font-mono); font-size: 1.1rem; color: var(--accent); font-weight: 500; }
+  .doctype-badge .dpct { font-size: 0.68rem; color: var(--muted); font-family: var(--font-mono); }
+
+  footer {
+    padding: 24px 48px;
+    border-top: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .card:nth-child(1) { animation-delay: 0.1s; }
+  .card:nth-child(2) { animation-delay: 0.15s; }
+  .card:nth-child(3) { animation-delay: 0.2s; }
+  .card:nth-child(4) { animation-delay: 0.25s; }
+  .card:nth-child(5) { animation-delay: 0.3s; }
+  .card:nth-child(6) { animation-delay: 0.35s; }
+  .card:nth-child(7) { animation-delay: 0.4s; }
+
+  @media (max-width: 1100px) {
+    .c8, .c7, .c5, .c4, .c6 { grid-column: span 12; }
+    header { flex-direction: column; align-items: flex-start; }
+    .hbar-label { width: 140px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>Bibliometric <span>Analysis</span></h1>
+    <p>Web of Science Export · 900 Records · 2000–2026</p>
+  </div>
+  <div class="header-right">
+    <div class="stat-pill">
+      <div class="val">900</div>
+      <div class="lbl">Publications</div>
+    </div>
+    <div class="stat-pill">
+      <div class="val" id="total-citations">—</div>
+      <div class="lbl">Total Citations</div>
+    </div>
+    <div class="stat-pill">
+      <div class="val">26</div>
+      <div class="lbl">Years Span</div>
+    </div>
+    <div class="stat-pill">
+      <div class="val">78+</div>
+      <div class="lbl">Countries</div>
+    </div>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- Publications over time -->
+  <div class="card c8">
+    <div class="card-title">Publications Over Time</div>
+    <canvas id="yearChart" height="90"></canvas>
+  </div>
+
+  <!-- Doc types -->
+  <div class="card c4">
+    <div class="card-title">Document Types</div>
+    <div class="doctype-badges" id="doctype-badges"></div>
+  </div>
+
+  <!-- Top journals -->
+  <div class="card c7">
+    <div class="card-title">Top Journals / Venues</div>
+    <div class="hbar-list" id="journals-list"></div>
+  </div>
+
+  <!-- Research areas donut -->
+  <div class="card c5">
+    <div class="card-title">Research Areas</div>
+    <canvas id="raChart" height="180"></canvas>
+    <div class="ra-labels" id="ra-labels"></div>
+  </div>
+
+  <!-- Keywords -->
+  <div class="card c6">
+    <div class="card-title">Author Keywords (Top 30)</div>
+    <div class="kw-cloud" id="kw-cloud"></div>
+  </div>
+
+  <!-- Countries -->
+  <div class="card c3">
+    <div class="card-title">Top Countries</div>
+    <div class="country-list" id="country-list"></div>
+  </div>
+
+  <!-- Citations per year -->
+  <div class="card c3">
+    <div class="card-title">Citations by Year</div>
+    <canvas id="citedYearChart" height="190"></canvas>
+  </div>
+
+  <!-- Most cited -->
+  <div class="card c12">
+    <div class="card-title">Most Cited Publications (Top 8)</div>
+    <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:16px;">
+      <div class="cited-list" id="cited-list-1"></div>
+      <div class="cited-list" id="cited-list-2"></div>
+      <div class="cited-list" id="cited-list-3"></div>
+      <div class="cited-list" id="cited-list-4"></div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <span>Generated from WoS_900.bib · Bibliometric Dashboard</span>
+  <span>Topics: Energy Poverty · Thermal Comfort · Climate Change · Building Efficiency</span>
+</footer>
+
+<script>
+const DATA = {
+  years: {"2000":6,"2001":6,"2002":9,"2003":9,"2004":8,"2005":6,"2006":6,"2007":8,"2008":14,"2009":18,"2010":20,"2011":19,"2012":17,"2013":21,"2014":27,"2015":35,"2016":47,"2017":48,"2018":45,"2019":56,"2020":56,"2021":66,"2022":71,"2023":76,"2024":80,"2025":120,"2026":6},
+  types: {"article":822,"inproceedings":57,"incollection":21},
+  top_journals: [["SUSTAINABILITY",37],["ENERGY RESEARCH & SOCIAL SCIENCE",20],["ENERGY AND BUILDINGS",18],["ENERGY POLICY",16],["ENERGIES",15],["QUATERNARY SCIENCE REVIEWS",14],["PALAEOGEOGRAPHY PALAEOCLIMATOLOGY PALAEOECOLOGY",11],["QUATERNARY INTERNATIONAL",11],["BUILDINGS",10],["PLOS ONE",9],["GLOBAL ENVIRONMENTAL CHANGE",8],["ENVIRONMENT INTERNATIONAL",7],["SCIENCE OF THE TOTAL ENVIRONMENT",7],["URBAN CLIMATE",7],["APPLIED ENERGY",6]],
+  top_cited: [[571,"Mapping Community Determinants of Heat Vulnerability"],[449,"The political economy of energy poverty: A review of key challenges"],[401,"Zero energy buildings and sustainable development implications - A review"],[367,"Spatializing energy justice"],[358,"Rethinking the measurement of energy poverty in Europe"],[312,"Urban heat island mitigation strategies: State-of-the-art review"],[283,"Holocene vegetation and climate dynamics of NE China"],[262,"Innovating to zero the building sector in Europe"]],
+  top_keywords: [["energy poverty",62],["climate change",45],["thermal comfort",44],["fuel poverty",32],["social housing",29],["energy efficiency",29],["sustainable development",29],["sustainability",17],["energy",15],["housing",15],["renewable energy",12],["holocene",11],["gender",10],["temperature",10],["china",10],["energy vulnerability",9],["energy consumption",9],["public health",8],["urban heat island",7],["cooling",7],["vulnerability",6],["building performance",6],["heat stress",6],["indoor environment",5],["low income",5],["decarbonisation",5],["resilience",5],["green buildings",4],["pollen",4],["well-being",4]],
+  research_areas: [["Environmental Sciences & Ecology",173],["Science & Technology - Other Topics",132],["Engineering",104],["Energy & Fuels",97],["Geology",87],["Construction & Building Technology",82],["Physical Geography",52],["Agriculture",38],["Business & Economics",36],["Meteorology & Atmospheric Sciences",33]],
+  citations_by_year: {"2000":228,"2001":110,"2002":334,"2003":126,"2004":256,"2005":75,"2006":135,"2007":291,"2008":601,"2009":1056,"2010":740,"2011":621,"2012":530,"2013":595,"2014":682,"2015":702,"2016":788,"2017":607,"2018":469,"2019":445,"2020":330,"2021":230,"2022":140,"2023":75,"2024":38,"2025":12},
+  countries: [["USA",200],["China",136],["England",110],["Australia",75],["South Africa",66],["Germany",48],["Spain",46],["India",45],["Canada",39],["Italy",32],["Japan",32],["France",30],["Portugal",24],["Brazil",23],["Hong Kong",21]]
+};
+
+// Total citations
+const totalCit = Object.values(DATA.citations_by_year).reduce((a,b)=>a+b,0);
+document.getElementById('total-citations').textContent = totalCit.toLocaleString();
+
+const accent  = '#e8c97a';
+const accent2 = '#7aa8e8';
+const accent3 = '#7ae8b8';
+const accent4 = '#e87a9a';
+const muted   = '#7a8099';
+const surface2= '#1a1e2a';
+
+Chart.defaults.color = muted;
+Chart.defaults.font.family = "'DM Mono', monospace";
+Chart.defaults.font.size = 11;
+
+// Year chart
+const yearKeys = Object.keys(DATA.years);
+const yearVals = Object.values(DATA.years);
+
+new Chart(document.getElementById('yearChart'), {
+  type: 'bar',
+  data: {
+    labels: yearKeys,
+    datasets: [{
+      label: 'Publications',
+      data: yearVals,
+      backgroundColor: yearVals.map((v,i) => {
+        const t = i / yearVals.length;
+        return `rgba(${Math.round(122 + t*100)}, ${Math.round(168 + t*30)}, ${Math.round(232 - t*80)}, 0.8)`;
+      }),
+      borderRadius: 3,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#13161f',
+        borderColor: '#252a38',
+        borderWidth: 1,
+        titleColor: accent,
+        bodyColor: '#e8e6df',
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(37,42,56,0.5)' },
+        ticks: { maxRotation: 45, minRotation: 45 }
+      },
+      y: {
+        grid: { color: 'rgba(37,42,56,0.5)' },
+        beginAtZero: true
+      }
+    }
+  }
+});
+
+// Doc types
+const typeTotal = Object.values(DATA.types).reduce((a,b)=>a+b,0);
+const typeColors = [accent, accent2, accent3];
+const typeBadges = document.getElementById('doctype-badges');
+Object.entries(DATA.types).forEach(([k,v], i) => {
+  typeBadges.innerHTML += `
+    <div class="doctype-badge">
+      <div>
+        <div class="dtype">${k === 'inproceedings' ? 'Conference Paper' : k === 'incollection' ? 'Book Chapter' : 'Journal Article'}</div>
+        <div class="dpct">${((v/typeTotal)*100).toFixed(1)}% of corpus</div>
+      </div>
+      <div class="dcount" style="color:${typeColors[i]}">${v.toLocaleString()}</div>
+    </div>`;
+});
+
+// Journals horizontal bars
+const maxJ = DATA.top_journals[0][1];
+const jList = document.getElementById('journals-list');
+DATA.top_journals.forEach(([name, count]) => {
+  const pct = (count/maxJ*100).toFixed(1);
+  jList.innerHTML += `
+    <div class="hbar-item">
+      <div class="hbar-label" title="${name}">${name}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${pct}%"></div></div>
+      <div class="hbar-val">${count}</div>
+    </div>`;
+});
+
+// Research areas donut
+const raColors = [accent, accent2, accent3, accent4, '#c87ae8', '#e8a07a', '#a8e87a', '#7ae8d8', '#e8e07a', '#a07ae8'];
+const raLabels = DATA.research_areas.map(r=>r[0].split('&')[0].trim());
+const raVals   = DATA.research_areas.map(r=>r[1]);
+
+new Chart(document.getElementById('raChart'), {
+  type: 'doughnut',
+  data: {
+    labels: raLabels,
+    datasets: [{
+      data: raVals,
+      backgroundColor: raColors,
+      borderColor: '#13161f',
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '65%',
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#13161f',
+        borderColor: '#252a38',
+        borderWidth: 1,
+        titleColor: accent,
+        bodyColor: '#e8e6df',
+      }
+    }
+  }
+});
+
+const raLabelEl = document.getElementById('ra-labels');
+DATA.research_areas.slice(0,6).forEach(([name,count],i) => {
+  raLabelEl.innerHTML += `
+    <div class="ra-label-item">
+      <div class="ra-dot" style="background:${raColors[i]}"></div>
+      <div class="ra-name">${name.split('&')[0].trim()}</div>
+      <div class="ra-count">${count}</div>
+    </div>`;
+});
+
+// Keywords
+const kwCloud = document.getElementById('kw-cloud');
+const kwMax = DATA.top_keywords[0][1];
+const kwPalette = [accent, accent2, accent3, accent4, '#c87ae8', '#e8a07a'];
+DATA.top_keywords.forEach(([kw, count], i) => {
+  const size = 0.72 + (count/kwMax) * 0.6;
+  const color = kwPalette[i % kwPalette.length];
+  const opacity = 0.3 + (count/kwMax)*0.5;
+  kwCloud.innerHTML += `
+    <span class="kw-tag" style="font-size:${size}rem; color:${color}; border-color:${color}; background:${color}18;" title="${count} occurrences">
+      ${kw} <span style="opacity:0.6;font-size:0.75em">${count}</span>
+    </span>`;
+});
+
+// Countries
+const countryList = document.getElementById('country-list');
+const countryMax = DATA.countries[0][1];
+DATA.countries.forEach(([name, count], i) => {
+  const pct = (count/countryMax*100).toFixed(1);
+  countryList.innerHTML += `
+    <div class="country-item">
+      <div class="country-rank">${String(i+1).padStart(2,'0')}</div>
+      <div class="country-name">${name}</div>
+      <div class="country-bar-wrap"><div class="country-bar" style="width:${pct}%"></div></div>
+      <div class="country-count">${count}</div>
+    </div>`;
+});
+
+// Citations by year
+const cyKeys = Object.keys(DATA.citations_by_year);
+const cyVals = Object.values(DATA.citations_by_year);
+
+new Chart(document.getElementById('citedYearChart'), {
+  type: 'line',
+  data: {
+    labels: cyKeys,
+    datasets: [{
+      label: 'Citations',
+      data: cyVals,
+      borderColor: accent4,
+      backgroundColor: `${accent4}22`,
+      fill: true,
+      tension: 0.4,
+      pointRadius: 2,
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#13161f',
+        borderColor: '#252a38',
+        borderWidth: 1,
+        titleColor: accent4,
+        bodyColor: '#e8e6df',
+      }
+    },
+    scales: {
+      x: { grid: { color: 'rgba(37,42,56,0.5)' }, ticks: { maxTicksLimit: 8 } },
+      y: { grid: { color: 'rgba(37,42,56,0.5)' }, beginAtZero: true }
+    }
+  }
+});
+
+// Top cited
+const citedLists = ['cited-list-1','cited-list-2','cited-list-3','cited-list-4'];
+DATA.top_cited.forEach(([count, title], i) => {
+  const el = document.getElementById(citedLists[i]);
+  el.innerHTML = `
+    <div class="cited-item">
+      <div class="cited-num">${count}</div>
+      <div>
+        <div class="cited-title">${title}</div>
+        <div class="cited-label">times cited</div>
+      </div>
+    </div>`;
+});
+</script>
+</body>
+</html>
